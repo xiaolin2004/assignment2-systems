@@ -3,7 +3,12 @@
 All changes we make to the assignment code or PDF will be documented in this file.
 
 ## [26.0.0] - 2025-04-15
-- TODO
+- handout: more detailed Nsight Systems profiler
+- handout: replace leaderboard task with full forward and backward pass on two B200s
+- handout: add section on activation checkpointing
+- handout: remove excessive benchmarking, multi-GPU sweeps
+- handout: add FSDP section
+- handout: remove bucketed DDP
 
 
 ## [1.0.5] - 2025-07-03
