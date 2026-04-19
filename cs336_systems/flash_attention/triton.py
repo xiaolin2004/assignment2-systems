@@ -14,6 +14,7 @@ def flash_fwd_kernel(
     stride_lb,stride_lq,
     N_QUERIES, N_KEYS,
     scale,
+    is_causal:tl.constexpr,
     D:tl.constexpr,
     Q_TILE_SIZE:tl.constexpr,
     K_TILE_SIZE:tl.constexpr,
@@ -102,6 +103,7 @@ def flash_fwd_kernel(
         block_shape=(Q_TILE_SIZE,),
         order=(0,),
     )   
+
     
     Q_tile = tl.load(Q_block_ptr,boundary_check=(0,1),padding_option="zero") # shape: [Q_TILE_SIZE, D]
     O_tile = tl.zeros((Q_TILE_SIZE, D), dtype=tl.float32) # accumulator for output, shape: [Q_TILE_SIZE, D]
@@ -112,12 +114,19 @@ def flash_fwd_kernel(
         # 每次处理一个 key/value tile
         K_tile = tl.load(K_block_ptr,boundary_check=(0,1),padding_option="zero") # shape: [K_TILE_SIZE, D]
         V_tile = tl.load(V_block_ptr,boundary_check=(0,1),padding_option="zero") # shape: [K_TILE_SIZE, D]
-
+        
         # 计算pre-softmax的attention score，shape: [Q_TILE_SIZE, K_TILE_SIZE]
         score_tile = tl.dot(Q_tile, tl.trans(K_tile))*scale # score_tile = Q_tile @ K_tile.T
         k_offset = i*K_TILE_SIZE + tl.arange(0,K_TILE_SIZE)
         k_mask = k_offset < N_KEYS
         score_tile = tl.where(k_mask[None,:], score_tile, float('-inf')) # 对越界的 key tile 元素 mask 掉
+        if is_causal:
+            # 如果是 causal attention，需要对 score_tile 中越界的部分进行 mask 掉
+            # 越界的定义是 key 的位置超过了 query 的位置，即 k_offset > q_offset
+            k_offset = i*K_TILE_SIZE + tl.arange(0,K_TILE_SIZE) # 当前 key tile 中每个 key 的全局位置，shape: [K_TILE_SIZE,]
+            q_offset = query_tile_index * Q_TILE_SIZE + tl.arange(0,Q_TILE_SIZE) # 当前 query tile 中每个 query 的全局位置，shape: [Q_TILE_SIZE,]
+            causal_mask = k_offset[None,:] > q_offset[:, None] # shape: [Q_TILE_SIZE, K_TILE_SIZE]
+            score_tile = tl.where(causal_mask, float('-inf'), score_tile) # 对 causal mask 为 True 的位置 mask 掉
         m_old = max_score_tile
         m_new = tl.maximum(m_old, tl.max(score_tile, axis=1)) # 每个 query row 的 max score，shape: [Q_TILE_SIZE,]
         p = tl.exp(score_tile - m_new[:, None]) # 计算每个 score 的 exp，并且为了数值稳定性减去 max score，shape: [Q_TILE_SIZE, K_TILE_SIZE]
@@ -144,6 +153,7 @@ class FlashAttentionAutogradFunctionTriton(torch.autograd.Function):
         output: [batch, queries, d_head]
         lse: [batch, queries] 每个 query 行的 logsumexp，用于 backward pass 的数值稳定性
         """
+        ctx.is_causal = is_causal
         batch_size, n_queries, d_head = q.shape
         n_keys = k.shape[1]
         output = torch.empty_like(q)
@@ -163,6 +173,7 @@ class FlashAttentionAutogradFunctionTriton(torch.autograd.Function):
             lse.stride(0), lse.stride(1),
             n_queries, n_keys,
             scale=1.0/d_head**0.5,
+            is_causal=is_causal,
             D=d_head,
             Q_TILE_SIZE=Q_TILE_SIZE,
             K_TILE_SIZE=K_TILE_SIZE,
