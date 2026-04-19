@@ -1,3 +1,5 @@
+from typing import Any
+
 import torch
 from jaxtyping import Float
 from torch import Tensor
@@ -81,3 +83,26 @@ class FlashAttentionAutogradFunctionPyTorch(torch.autograd.Function):
         lse = torch.cat(lse_tiles, dim=1)
         ctx.save_for_backward(q, k, v, output, lse)
         return output
+
+    @staticmethod
+    def backward(
+        ctx: Any,
+        *grad_outputs: Any,
+    ) -> tuple[
+        Float[Tensor, "batch queries d_head"],
+        Float[Tensor, "batch keys d_head"],
+        Float[Tensor, "batch keys d_value"],
+        None,
+    ]:
+        #Your implementation should take the 𝑸, 𝑲, 𝑽 , 𝑶, 𝒅𝑶, and 𝐿 tensors as inputs, and return 𝒅𝑸, 𝒅𝑲 and 𝒅𝑽 .
+        Q, K, V, O, L = ctx.saved_tensors
+        (dO,) = grad_outputs
+        D = torch.sum(O * dO, dim=-1, keepdim=True)
+        S = einsum(Q, K, "b q d, b k d -> b q k") * (Q.shape[-1] ** -0.5)
+        P = torch.exp(S - L.unsqueeze(-1))
+        dV = einsum(P,dO,"b q k, b q d-> b k d")
+        dP = einsum(dO, V, "b q d, b k d -> b q k")
+        dS = P * (dP - D)
+        dQ = einsum(dS, K, "b q k, b k d -> b q d") * (Q.shape[-1] ** -0.5)
+        dK = einsum(dS, Q, "b q k, b q d -> b k d") * (Q.shape[-1] ** -0.5)
+        return dQ, dK, dV, None
