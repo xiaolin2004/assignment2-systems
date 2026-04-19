@@ -57,6 +57,28 @@ Python 3.12.10 (main, Apr  9 2025, 04:03:51) [Clang 20.1.0 ] on linux
 
 `uv run` installs dependencies automatically as dictated in the `pyproject.toml` file.
 
+## Mac Triton Development
+
+If you are developing on macOS, treat this machine as the authoring environment and
+run Triton kernels on a Linux x86_64 CUDA host.
+
+- `pyrightconfig.json` and `.vscode/settings.json` point Pylance/Pyright at `./typings`,
+  which provides local Triton type stubs for inline signatures and completions.
+- The Triton stubs cover common kernel-authoring APIs such as `triton.jit`,
+  `triton.autotune`, `tl.make_block_ptr`, `tl.advance`, `tl.static_range`,
+  `tl.atomic_*`, `triton.runtime.*`, `triton.testing.*`, and `tl.math.*`.
+- `cs336_systems.triton._compat` keeps Triton imports lazy enough that kernel modules
+  can still be imported on unsupported platforms.
+- `tests/test_triton_compat.py` is a local smoke test that verifies the import path
+  stays usable even when Triton itself is unavailable.
+
+Useful local commands:
+
+```sh
+uv run pytest -q tests/test_triton_compat.py
+uv run python -c "from cs336_systems.triton import require_triton; require_triton()"
+```
+
 ## Submitting
 
 To submit, run `./test_and_make_submission.sh` . This script will install your

@@ -1,0 +1,8 @@
+{
+  "python.analysis.autoImportCompletions": true,
+  "python.analysis.extraPaths": [
+    "${workspaceFolder}/cs336-basics"
+  ],
+  "python.analysis.stubPath": "${workspaceFolder}/typings",
+  "python.analysis.typeCheckingMode": "basic"
+}

@@ -1,0 +1,22 @@
+{
+  "include": [
+    "cs336_systems",
+    "tests",
+    "scripts"
+  ],
+  "exclude": [
+    ".venv",
+    "**/__pycache__"
+  ],
+  "stubPath": "./typings",
+  "venvPath": ".",
+  "venv": ".venv",
+  "executionEnvironments": [
+    {
+      "root": ".",
+      "extraPaths": [
+        "./cs336-basics"
+      ]
+    }
+  ]
+}
