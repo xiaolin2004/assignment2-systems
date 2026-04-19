@@ -115,7 +115,9 @@ def flash_fwd_kernel(
 
         # 计算pre-softmax的attention score，shape: [Q_TILE_SIZE, K_TILE_SIZE]
         score_tile = tl.dot(Q_tile, tl.trans(K_tile))*scale # score_tile = Q_tile @ K_tile.T
-        
+        k_offset = i*K_TILE_SIZE + tl.arange(0,K_TILE_SIZE)
+        k_mask = k_offset < N_KEYS
+        score_tile = tl.where(k_mask[None,:], score_tile, float('-inf')) # 对越界的 key tile 元素 mask 掉
         m_old = max_score_tile
         m_new = tl.maximum(m_old, tl.max(score_tile, axis=1)) # 每个 query row 的 max score，shape: [Q_TILE_SIZE,]
         p = tl.exp(score_tile - m_new[:, None]) # 计算每个 score 的 exp，并且为了数值稳定性减去 max score，shape: [Q_TILE_SIZE, K_TILE_SIZE]
@@ -126,9 +128,9 @@ def flash_fwd_kernel(
         K_block_ptr = tl.advance(K_block_ptr, (K_TILE_SIZE, 0)) # 移动到下一个 key tile
         V_block_ptr = tl.advance(V_block_ptr, (K_TILE_SIZE, 0))
     O_tile = O_tile / L_tile[:, None] # 最后除以 logsumexp 得到最终的 attention output，shape: [Q_TILE_SIZE, D]
-    tl.store(O_block_ptr, O_tile)
+    tl.store(O_block_ptr, O_tile,boundary_check=(0,1))
     L_tile = tl.log(L_tile) + max_score_tile # 最后计算 logsumexp 的值，shape: [Q_TILE_SIZE,]
-    tl.store(L_block_ptr, L_tile)
+    tl.store(L_block_ptr, L_tile,boundary_check=(0,))
     
 class FlashAttentionAutogradFunctionTriton(torch.autograd.Function):
     @staticmethod

@@ -26,12 +26,8 @@ def _attention_and_lse(q, k, v, is_causal=False):
     return o, L
 
 
-def _make_attn_inputs(device=None):
+def _make_attn_inputs(device=None, batch_size=4, n_queries=128, n_keys=128, D=64):
     torch.random.manual_seed(0)
-    batch_size = 4
-    n_queries = 128
-    n_keys = 128
-    D = 64
     q = torch.randn(batch_size, n_queries, D, device=device, requires_grad=True)
     k = torch.randn(batch_size, n_keys, D, device=device, requires_grad=True)
     v = torch.randn(batch_size, n_keys, D, device=device, requires_grad=True)
@@ -40,8 +36,14 @@ def _make_attn_inputs(device=None):
     return q, k, v, do
 
 
-def _test_flash_forward_pass(impl, device="cpu", is_causal=False):
-    q, k, v, _do = _make_attn_inputs(device)
+def _test_flash_forward_pass(impl, device="cpu", is_causal=False, batch_size=4, n_queries=128, n_keys=128, D=64):
+    q, k, v, _do = _make_attn_inputs(
+        device,
+        batch_size=batch_size,
+        n_queries=n_queries,
+        n_keys=n_keys,
+        D=D,
+    )
     o = impl(q, k, v, is_causal)
 
     # Extract L from the saved tensors
@@ -63,6 +65,15 @@ def test_flash_forward_pass_pytorch():
     _test_flash_forward_pass(get_flashattention_autograd_function_pytorch().apply)
 
 
+@pytest.mark.parametrize(("n_queries", "n_keys"), [(70, 94), (33, 65)])
+def test_flash_forward_pass_pytorch_non_power_of_two(n_queries, n_keys):
+    _test_flash_forward_pass(
+        get_flashattention_autograd_function_pytorch().apply,
+        n_queries=n_queries,
+        n_keys=n_keys,
+    )
+
+
 @pytest.mark.skipif(
     not torch.cuda.is_available(),
     reason="A GPU must be available to run Triton kernels",
@@ -70,6 +81,21 @@ def test_flash_forward_pass_pytorch():
 @pytest.mark.parametrize("is_causal", [False, True])
 def test_flash_forward_pass_triton(is_causal):
     _test_flash_forward_pass(get_flashattention_autograd_function_triton().apply, device="cuda", is_causal=is_causal)
+
+
+@pytest.mark.skipif(
+    not torch.cuda.is_available(),
+    reason="A GPU must be available to run Triton kernels",
+)
+@pytest.mark.parametrize(("n_queries", "n_keys"), [(70, 94), (33, 65)])
+def test_flash_forward_pass_triton_non_power_of_two(n_queries, n_keys):
+    _test_flash_forward_pass(
+        get_flashattention_autograd_function_triton().apply,
+        device="cuda",
+        is_causal=False,
+        n_queries=n_queries,
+        n_keys=n_keys,
+    )
 
 
 def flash_backward_results(impl, is_causal, device=None):
