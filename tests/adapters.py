@@ -52,7 +52,7 @@ def get_ddp(module: torch.nn.Module) -> torch.nn.Module:
     """
     # For example: return DDP(module)
     import cs336_systems.distributed.dpp
-    return cs336_systems.distributed.dpp.MinDPPFlat(module)
+    return cs336_systems.distributed.dpp.DDPOverlap(module)
 
 
 def ddp_on_after_backward(ddp_model: torch.nn.Module, optimizer: torch.optim.Optimizer):
